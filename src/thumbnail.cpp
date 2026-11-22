@@ -1,11 +1,12 @@
 #include "thumbnail.h"
 #include "heic_decode.h"
 #include "module.h"
+#include "video_decode.h"
 
 #include <algorithm>
 #include <cstring>
 
-HeicThumbnailProvider::HeicThumbnailProvider() { ++g_dllRefs; }
+HeicThumbnailProvider::HeicThumbnailProvider(bool video) : m_video(video) { ++g_dllRefs; }
 
 HeicThumbnailProvider::~HeicThumbnailProvider() {
     if (m_stream) m_stream->Release();
@@ -48,15 +49,18 @@ IFACEMETHODIMP HeicThumbnailProvider::GetThumbnail(UINT cx, HBITMAP* phbmp, WTS_
     *pdwAlpha = WTSAT_RGB;
     if (!m_stream || cx == 0) return E_UNEXPECTED;
 
-    std::vector<BYTE> data;
-    HRESULT hr = ReadAllFromStream(m_stream, data);
-    if (FAILED(hr)) return hr;
-
     DecodedImage img;
-    hr = DecodeHeic(data.data(), data.size(), img, cx);
-    if (FAILED(hr)) return hr;
-    data.clear();
-    data.shrink_to_fit();
+    HRESULT hr;
+    if (m_video) {
+        hr = DecodeVideoFrame(m_stream, img);
+        if (FAILED(hr)) return hr;
+    } else {
+        std::vector<BYTE> data;
+        hr = ReadAllFromStream(m_stream, data);
+        if (FAILED(hr)) return hr;
+        hr = DecodeHeic(data.data(), data.size(), img, cx);
+        if (FAILED(hr)) return hr;
+    }
 
     // Adatta al riquadro cx x cx mantenendo le proporzioni.
     UINT w = img.width, h = img.height;

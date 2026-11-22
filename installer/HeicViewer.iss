@@ -1,6 +1,6 @@
 ; HEIC Viewer - installer (Inno Setup 6)
 
-#define AppVersion "1.0.0"
+#define AppVersion "1.1.0"
 
 [Setup]
 AppId={{B3B9A4E0-6C2D-4F5A-9E1B-0D7C2A1F4E10}
@@ -26,7 +26,7 @@ UninstallDisplayIcon={sys}\imageres.dll,-72
 Name: "it"; MessagesFile: "compiler:Languages\Italian.isl"
 
 [Messages]
-FinishedLabel=Fatto! Le foto HEIC ora hanno le miniature in Esplora file.%n%nSe facendo doppio clic una foto non si apre nel Visualizzatore foto di Windows: tasto destro sulla foto > Apri con > Scegli un'altra app > Visualizzatore foto di Windows > spunta "Usa sempre questa app".
+FinishedLabel=Fatto! Le foto HEIC e i video .MOV ora hanno le miniature in Esplora file.%n%nSe facendo doppio clic una foto non si apre nel Visualizzatore foto di Windows: tasto destro sulla foto > Apri con > Scegli un'altra app > Visualizzatore foto di Windows > spunta "Usa sempre questa app".
 
 [Tasks]
 Name: "removems"; Description: "Rimuovi ""Estensioni immagine HEIF"" di Microsoft (senza il codec HEVC a pagamento non funziona e può interferire)"

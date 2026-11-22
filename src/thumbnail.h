@@ -5,10 +5,10 @@
 #include <thumbcache.h>
 #include <atomic>
 
-// Genera le miniature dei file HEIC in Esplora file.
+// Genera le miniature in Esplora file: foto HEIC oppure video .MOV.
 class HeicThumbnailProvider : public IInitializeWithStream, public IThumbnailProvider {
 public:
-    HeicThumbnailProvider();
+    explicit HeicThumbnailProvider(bool video = false);
 
     // IUnknown
     IFACEMETHODIMP QueryInterface(REFIID riid, void** ppv) override;
@@ -21,8 +21,16 @@ public:
     // IThumbnailProvider
     IFACEMETHODIMP GetThumbnail(UINT cx, HBITMAP* phbmp, WTS_ALPHATYPE* pdwAlpha) override;
 
+protected:
+    virtual ~HeicThumbnailProvider();
+
 private:
-    ~HeicThumbnailProvider();
     std::atomic<long> m_ref{1};
     IStream* m_stream = nullptr;
+    bool m_video = false;
+};
+
+class VideoThumbnailProvider : public HeicThumbnailProvider {
+public:
+    VideoThumbnailProvider() : HeicThumbnailProvider(true) {}
 };

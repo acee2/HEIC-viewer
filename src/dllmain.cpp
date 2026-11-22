@@ -76,6 +76,8 @@ STDAPI DllGetClassObject(REFCLSID rclsid, REFIID riid, LPVOID* ppv) {
     IClassFactory* factory = nullptr;
     if (rclsid == CLSID_HeicThumbnailProvider) {
         factory = new (std::nothrow) ClassFactory<HeicThumbnailProvider>();
+    } else if (rclsid == CLSID_HeicVideoThumbnailProvider) {
+        factory = new (std::nothrow) ClassFactory<VideoThumbnailProvider>();
     } else if (rclsid == CLSID_HeicWicDecoder) {
         factory = new (std::nothrow) ClassFactory<HeicWicDecoder>();
     } else {
@@ -100,6 +102,8 @@ const wchar_t* const kWicDecodersCategory = L"{7ED96837-96F0-4812-B211-F13C24117
 const wchar_t* const kPixelFormatBGRA = L"{6fddc324-4e03-4bfe-b185-3d77768dc90f}";
 const wchar_t* const kPhotoViewerProgId = L"PhotoViewer.FileAssoc.Heic";
 const wchar_t* const kExtensions[] = {L".heic", L".heif", L".hif"};
+const wchar_t* const kVideoExtensions[] = {L".mov"};
+const wchar_t* const kBackupKey = L"Software\\HEIC Viewer\\PreviousThumbnailHandlers";
 const char* const kBrands[] = {"heic", "heix", "hevc", "hevx", "heim", "heis", "mif1", "msf1"};
 
 std::wstring GuidStr(const GUID& g) {
@@ -134,6 +138,15 @@ HRESULT SetDword(const std::wstring& sub, const wchar_t* name, DWORD value) {
 
 HRESULT SetBinary(const std::wstring& sub, const wchar_t* name, const BYTE* data, DWORD size) {
     return SetValue(sub, name, REG_BINARY, data, size);
+}
+
+bool GetString(const std::wstring& sub, const wchar_t* name, std::wstring& out) {
+    wchar_t buf[256] = {};
+    DWORD size = sizeof(buf);
+    if (RegGetValueW(HKEY_LOCAL_MACHINE, sub.c_str(), name, RRF_RT_REG_SZ, nullptr, buf, &size) != ERROR_SUCCESS)
+        return false;
+    out = buf;
+    return true;
 }
 
 void DeleteTree(const std::wstring& sub) { RegDeleteTreeW(HKEY_LOCAL_MACHINE, sub.c_str()); }
@@ -174,6 +187,62 @@ HRESULT RegisterThumbnailProvider(const std::wstring& dllPath) {
     return S_OK;
 }
 
+// Registra la miniatura per un'estensione video, salvando il gestore
+// precedente di Windows per poterlo rimettere alla disinstallazione.
+HRESULT RegisterVideoThumbnailProvider(const std::wstring& dllPath) {
+    const std::wstring clsid = GuidStr(CLSID_HeicVideoThumbnailProvider);
+    const std::wstring base = std::wstring(kClasses) + L"CLSID\\" + clsid;
+
+    CHECK(SetString(base, nullptr, L"HEIC Viewer - Miniature video"));
+    CHECK(SetString(base + L"\\InprocServer32", nullptr, dllPath));
+    CHECK(SetString(base + L"\\InprocServer32", L"ThreadingModel", L"Apartment"));
+
+    for (const wchar_t* ext : kVideoExtensions) {
+        const std::wstring keys[] = {
+            std::wstring(kClasses) + ext + kThumbHandlerKey,
+            std::wstring(kClasses) + L"SystemFileAssociations\\" + ext + kThumbHandlerKey,
+        };
+        const wchar_t* backupNames[] = {L"ext", L"sfa"};
+        for (int i = 0; i < 2; ++i) {
+            std::wstring previous;
+            const std::wstring backupName = std::wstring(backupNames[i]) + ext;
+            std::wstring alreadySaved;
+            if (GetString(keys[i], nullptr, previous) && _wcsicmp(previous.c_str(), clsid.c_str()) != 0 &&
+                !GetString(kBackupKey, backupName.c_str(), alreadySaved)) {
+                CHECK(SetString(kBackupKey, backupName.c_str(), previous));
+            }
+            CHECK(SetString(keys[i], nullptr, clsid));
+        }
+    }
+    CHECK(SetString(L"Software\\Microsoft\\Windows\\CurrentVersion\\Shell Extensions\\Approved", clsid.c_str(),
+                    L"HEIC Viewer - Miniature video"));
+    return S_OK;
+}
+
+void UnregisterVideoThumbnailProvider() {
+    const std::wstring clsid = GuidStr(CLSID_HeicVideoThumbnailProvider);
+    for (const wchar_t* ext : kVideoExtensions) {
+        const std::wstring keys[] = {
+            std::wstring(kClasses) + ext + kThumbHandlerKey,
+            std::wstring(kClasses) + L"SystemFileAssociations\\" + ext + kThumbHandlerKey,
+        };
+        const wchar_t* backupNames[] = {L"ext", L"sfa"};
+        for (int i = 0; i < 2; ++i) {
+            std::wstring current, previous;
+            if (!GetString(keys[i], nullptr, current) || _wcsicmp(current.c_str(), clsid.c_str()) != 0) continue;
+            const std::wstring backupName = std::wstring(backupNames[i]) + ext;
+            if (GetString(kBackupKey, backupName.c_str(), previous)) {
+                SetString(keys[i], nullptr, previous);
+            } else {
+                DeleteTree(keys[i]);
+            }
+        }
+    }
+    DeleteTree(std::wstring(kClasses) + L"CLSID\\" + clsid);
+    DeleteValue(L"Software\\Microsoft\\Windows\\CurrentVersion\\Shell Extensions\\Approved", clsid.c_str());
+    DeleteTree(L"Software\\HEIC Viewer");
+}
+
 HRESULT RegisterWicDecoder(const std::wstring& dllPath) {
     const std::wstring clsid = GuidStr(CLSID_HeicWicDecoder);
     const std::wstring base = std::wstring(kClasses) + L"CLSID\\" + clsid;
@@ -185,7 +254,7 @@ HRESULT RegisterWicDecoder(const std::wstring& dllPath) {
     CHECK(SetString(base, L"Description", L"Decoder HEIC/HEIF basato su libheif e libde265"));
     CHECK(SetString(base, L"Vendor", GuidStr(GUID_VendorHeicViewer)));
     CHECK(SetString(base, L"ContainerFormat", GuidStr(GUID_ContainerFormatHeicViewer)));
-    CHECK(SetString(base, L"Version", L"1.0.0.0"));
+    CHECK(SetString(base, L"Version", L"1.1.0.0"));
     CHECK(SetString(base, L"Date", L"2026-11-22"));
     CHECK(SetString(base, L"SpecVersion", L"1.0.0.0"));
     CHECK(SetString(base, L"ColorManagementVersion", L"1.0.0.0"));
@@ -228,6 +297,7 @@ STDAPI DllRegisterServer() {
 
     HRESULT hr = RegisterWicDecoder(path);
     if (SUCCEEDED(hr)) hr = RegisterThumbnailProvider(path);
+    if (SUCCEEDED(hr)) hr = RegisterVideoThumbnailProvider(path);
     SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, nullptr, nullptr);
     return hr;
 }
@@ -245,6 +315,7 @@ STDAPI DllUnregisterServer() {
     }
     DeleteTree(std::wstring(kClasses) + kPhotoViewerProgId + kThumbHandlerKey);
     DeleteValue(L"Software\\Microsoft\\Windows\\CurrentVersion\\Shell Extensions\\Approved", thumb.c_str());
+    UnregisterVideoThumbnailProvider();
 
     SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, nullptr, nullptr);
     return S_OK;
