@@ -1,0 +1,11 @@
+{
+  "name": "heic-viewer",
+  "version": "1.0.0",
+  "dependencies": [
+    {
+      "name": "libheif",
+      "default-features": false,
+      "features": ["libde265"]
+    }
+  ]
+}
