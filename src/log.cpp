@@ -2,6 +2,7 @@
 
 #include <cstdio>
 #include <cwchar>
+#include <atomic>
 #include <string>
 
 void LogError(const wchar_t* where, HRESULT hr, const wchar_t* detail) {
@@ -36,4 +37,10 @@ void LogError(const wchar_t* where, HRESULT hr, const wchar_t* detail) {
         WriteFile(h, line, static_cast<DWORD>(n), &written, nullptr);
     }
     CloseHandle(h);
+}
+
+void LogInfo(const wchar_t* where, const wchar_t* detail) {
+    static std::atomic<int> count{0};
+    if (++count > 30) return;  // non riempire il file
+    LogError(where, S_OK, detail);
 }

@@ -449,7 +449,6 @@ IFACEMETHODIMP HevcDecoderMft::SetInputType(DWORD id, IMFMediaType* pType, DWORD
     ClearQueue();
     CreateDecoder();
     if (!m_decoder) LogError(L"Decoder video: libde265 non avviato", E_OUTOFMEMORY);
-    if (m_parameterSets.empty()) LogError(L"Decoder video: mancano VPS/SPS/PPS nel tipo di ingresso", S_FALSE);
     return m_decoder ? S_OK : E_OUTOFMEMORY;
 }
 

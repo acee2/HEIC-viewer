@@ -49,6 +49,7 @@ IFACEMETHODIMP HeicThumbnailProvider::GetThumbnail(UINT cx, HBITMAP* phbmp, WTS_
     *phbmp = nullptr;
     *pdwAlpha = WTSAT_RGB;
     if (!m_stream || cx == 0) return E_UNEXPECTED;
+    LogInfo(m_video ? L"Esplora file chiede miniatura video" : L"Esplora file chiede miniatura HEIC");
 
     DecodedImage img;
     HRESULT hr;

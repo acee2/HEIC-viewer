@@ -20,6 +20,7 @@
 #include "thumbnail.h"
 #include "wic_decoder.h"
 #include "hevc_mft.h"
+#include "log.h"
 
 HMODULE g_hModule = nullptr;
 std::atomic<long> g_dllRefs{0};
@@ -78,6 +79,15 @@ private:
 STDAPI DllGetClassObject(REFCLSID rclsid, REFIID riid, LPVOID* ppv) {
     if (!ppv) return E_POINTER;
     *ppv = nullptr;
+    {
+        wchar_t exe[MAX_PATH] = {};
+        GetModuleFileNameW(nullptr, exe, MAX_PATH);
+        const wchar_t* what = rclsid == CLSID_HeicThumbnailProvider ? L"miniature HEIC"
+                              : rclsid == CLSID_HeicVideoThumbnailProvider ? L"miniature video"
+                              : rclsid == CLSID_HevcDecoderMft ? L"decoder video"
+                              : rclsid == CLSID_HeicWicDecoder ? L"decoder foto" : L"?";
+        LogInfo(what, exe);
+    }
 
     IClassFactory* factory = nullptr;
     if (rclsid == CLSID_HeicThumbnailProvider) {
@@ -260,13 +270,18 @@ HRESULT RegisterVideoThumbnailProvider(const std::wstring& dllPath) {
         DeleteTree(oldBackup);
     }
 
+    // Alcune chiavi (es. i tipi di file di Windows Media Player) sono protette da
+    // Windows: se non si possono scrivere le saltiamo, senza bloccare il resto.
     for (const auto& key : VideoThumbnailKeys()) {
         std::wstring previous, alreadySaved;
-        if (!GetString(kBackupKey, key.c_str(), alreadySaved)) {
-            if (!GetString(key, nullptr, previous) || _wcsicmp(previous.c_str(), clsid.c_str()) == 0) previous.clear();
-            CHECK(SetString(kBackupKey, key.c_str(), previous));  // "" = non c'era niente
+        const bool hadBackup = GetString(kBackupKey, key.c_str(), alreadySaved);
+        if (!GetString(key, nullptr, previous) || _wcsicmp(previous.c_str(), clsid.c_str()) == 0) previous.clear();
+        const HRESULT hr = SetString(key, nullptr, clsid);
+        if (FAILED(hr)) {
+            LogError(L"Registrazione miniatura video saltata", hr, key.c_str());
+            continue;
         }
-        CHECK(SetString(key, nullptr, clsid));
+        if (!hadBackup) SetString(kBackupKey, key.c_str(), previous);  // "" = non c'era niente
     }
     for (const wchar_t* ext : kVideoExtensions) {
         CHECK(SetString(std::wstring(kClasses) + ext, L"PerceivedType", L"video"));
@@ -343,7 +358,7 @@ HRESULT RegisterWicDecoder(const std::wstring& dllPath) {
     CHECK(SetString(base, L"Description", L"Decoder HEIC/HEIF basato su libheif e libde265"));
     CHECK(SetString(base, L"Vendor", GuidStr(GUID_VendorHeicViewer)));
     CHECK(SetString(base, L"ContainerFormat", GuidStr(GUID_ContainerFormatHeicViewer)));
-    CHECK(SetString(base, L"Version", L"1.3.0.0"));
+    CHECK(SetString(base, L"Version", L"1.3.1.0"));
     CHECK(SetString(base, L"Date", L"2026-11-22"));
     CHECK(SetString(base, L"SpecVersion", L"1.0.0.0"));
     CHECK(SetString(base, L"ColorManagementVersion", L"1.0.0.0"));
@@ -384,16 +399,26 @@ STDAPI DllRegisterServer() {
     wchar_t path[MAX_PATH] = {};
     if (!GetModuleFileNameW(g_hModule, path, MAX_PATH)) return HRESULT_FROM_WIN32(GetLastError());
 
-    HRESULT hr = RegisterWicDecoder(path);
-    if (SUCCEEDED(hr)) hr = RegisterHevcDecoderMft(path);
+    // Ogni parte è indipendente: un errore in una non deve bloccare le altre.
+    HRESULT result = S_OK;
+    auto step = [&](const wchar_t* name, HRESULT hr) {
+        if (FAILED(hr)) {
+            LogError(name, hr);
+            if (SUCCEEDED(result)) result = hr;
+        } else {
+            LogInfo(name, L"ok");
+        }
+    };
 #ifdef _WIN64
     // Esplora file è a 64 bit: le miniature le registra solo la DLL a 64 bit.
     // La DLL a 32 bit serve ai programmi a 32 bit (es. Windows Media Player).
-    if (SUCCEEDED(hr)) hr = RegisterThumbnailProvider(path);
-    if (SUCCEEDED(hr)) hr = RegisterVideoThumbnailProvider(path);
+    step(L"Registrazione miniature HEIC", RegisterThumbnailProvider(path));
+    step(L"Registrazione miniature video", RegisterVideoThumbnailProvider(path));
 #endif
+    step(L"Registrazione decoder foto (WIC)", RegisterWicDecoder(path));
+    step(L"Registrazione decoder video (MFT)", RegisterHevcDecoderMft(path));
     SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, nullptr, nullptr);
-    return hr;
+    return result;
 }
 
 STDAPI DllUnregisterServer() {

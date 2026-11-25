@@ -1,6 +1,6 @@
 ; HEIC Viewer - installer (Inno Setup 6)
 
-#define AppVersion "1.3.0"
+#define AppVersion "1.3.1"
 
 [Setup]
 AppId={{B3B9A4E0-6C2D-4F5A-9E1B-0D7C2A1F4E10}
