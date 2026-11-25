@@ -213,7 +213,7 @@ void HevcDecoderMft::CreateDecoder() {
     de265_decoder_context* ctx = de265_new_decoder();
     if (!ctx) return;
     const unsigned cores = std::max(1u, std::thread::hardware_concurrency());
-    de265_start_worker_threads(ctx, static_cast<int>(std::min(cores, 16u)));
+    de265_start_worker_threads(ctx, static_cast<int>(std::min(cores, 4u)));
     m_decoder = ctx;
     PushParameterSets();
 }

@@ -76,6 +76,22 @@ private:
     std::atomic<long> m_ref{1};
 };
 
+// Processi della shell di Windows in cui i decoder NON devono caricarsi:
+// decodificare video/foto dentro Esplora file lo rallenta e lo può bloccare.
+// Le miniature le genera comunque il nostro gestore, in un processo separato.
+static bool IsShellProcess() {
+    wchar_t exe[MAX_PATH] = {};
+    GetModuleFileNameW(nullptr, exe, MAX_PATH);
+    const wchar_t* name = wcsrchr(exe, L'\\');
+    name = name ? name + 1 : exe;
+    const wchar_t* blocked[] = {L"explorer.exe", L"SearchProtocolHost.exe", L"SearchIndexer.exe",
+                                L"SearchFilterHost.exe", L"SearchApp.exe", L"SearchHost.exe"};
+    for (const wchar_t* b : blocked) {
+        if (_wcsicmp(name, b) == 0) return true;
+    }
+    return false;
+}
+
 STDAPI DllGetClassObject(REFCLSID rclsid, REFIID riid, LPVOID* ppv) {
     if (!ppv) return E_POINTER;
     *ppv = nullptr;
@@ -87,6 +103,10 @@ STDAPI DllGetClassObject(REFCLSID rclsid, REFIID riid, LPVOID* ppv) {
                               : rclsid == CLSID_HevcDecoderMft ? L"decoder video"
                               : rclsid == CLSID_HeicWicDecoder ? L"decoder foto" : L"?";
         LogInfo(what, exe);
+    }
+
+    if ((rclsid == CLSID_HevcDecoderMft || rclsid == CLSID_HeicWicDecoder) && IsShellProcess()) {
+        return CLASS_E_CLASSNOTAVAILABLE;
     }
 
     IClassFactory* factory = nullptr;
@@ -358,7 +378,7 @@ HRESULT RegisterWicDecoder(const std::wstring& dllPath) {
     CHECK(SetString(base, L"Description", L"Decoder HEIC/HEIF basato su libheif e libde265"));
     CHECK(SetString(base, L"Vendor", GuidStr(GUID_VendorHeicViewer)));
     CHECK(SetString(base, L"ContainerFormat", GuidStr(GUID_ContainerFormatHeicViewer)));
-    CHECK(SetString(base, L"Version", L"1.3.1.0"));
+    CHECK(SetString(base, L"Version", L"1.3.2.0"));
     CHECK(SetString(base, L"Date", L"2026-11-22"));
     CHECK(SetString(base, L"SpecVersion", L"1.0.0.0"));
     CHECK(SetString(base, L"ColorManagementVersion", L"1.0.0.0"));
