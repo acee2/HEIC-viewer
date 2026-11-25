@@ -44,6 +44,16 @@ jobs:
           name: HEIC-Viewer-Setup
           path: dist/HEIC-Viewer-Setup.exe
 
+      - name: Pubblica la release "latest" (link di download fisso)
+        if: github.ref == 'refs/heads/main'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete latest --yes --cleanup-tag 2>$null
+          $global:LASTEXITCODE = 0
+          gh release create latest dist/HEIC-Viewer-Setup.exe --target "${{ github.sha }}" --title "HEIC Viewer (ultima versione)" --notes "Setup dell'ultima build. Scarica HEIC-Viewer-Setup.exe e avvialo." --latest
+
       - name: Pubblica la release (solo sui tag v*)
         if: startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
