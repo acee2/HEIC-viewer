@@ -5,6 +5,8 @@
 #include <windows.h>
 #include <shlobj.h>
 #include <wincodec.h>
+#include <mfapi.h>
+#include <mftransform.h>
 
 #include <cstring>
 #include <cwchar>
@@ -14,6 +16,7 @@
 #include "module.h"
 #include "thumbnail.h"
 #include "wic_decoder.h"
+#include "hevc_mft.h"
 
 HMODULE g_hModule = nullptr;
 std::atomic<long> g_dllRefs{0};
@@ -78,6 +81,8 @@ STDAPI DllGetClassObject(REFCLSID rclsid, REFIID riid, LPVOID* ppv) {
         factory = new (std::nothrow) ClassFactory<HeicThumbnailProvider>();
     } else if (rclsid == CLSID_HeicVideoThumbnailProvider) {
         factory = new (std::nothrow) ClassFactory<VideoThumbnailProvider>();
+    } else if (rclsid == CLSID_HevcDecoderMft) {
+        factory = new (std::nothrow) ClassFactory<HevcDecoderMft>();
     } else if (rclsid == CLSID_HeicWicDecoder) {
         factory = new (std::nothrow) ClassFactory<HeicWicDecoder>();
     } else {
@@ -243,6 +248,30 @@ void UnregisterVideoThumbnailProvider() {
     DeleteTree(L"Software\\HEIC Viewer");
 }
 
+// Decoder video HEVC per Media Foundation (Windows Media Player ecc.).
+HRESULT RegisterHevcDecoderMft(const std::wstring& dllPath) {
+    const std::wstring clsid = GuidStr(CLSID_HevcDecoderMft);
+    const std::wstring base = std::wstring(kClasses) + L"CLSID\\" + clsid;
+    CHECK(SetString(base, nullptr, L"HEIC Viewer - Decoder video HEVC"));
+    CHECK(SetString(base + L"\\InprocServer32", nullptr, dllPath));
+    CHECK(SetString(base + L"\\InprocServer32", L"ThreadingModel", L"Both"));
+
+    MFT_REGISTER_TYPE_INFO inputs[] = {
+        {MFMediaType_Video, MFVideoFormat_HEVC},
+        {MFMediaType_Video, MFVideoFormat_HEVC_ES},
+    };
+    MFT_REGISTER_TYPE_INFO outputs[] = {
+        {MFMediaType_Video, MFVideoFormat_NV12},
+    };
+    wchar_t name[] = L"HEIC Viewer HEVC Decoder (libde265)";
+    return MFTRegister(CLSID_HevcDecoderMft, MFT_CATEGORY_VIDEO_DECODER, name, 0, 2, inputs, 1, outputs, nullptr);
+}
+
+void UnregisterHevcDecoderMft() {
+    MFTUnregister(CLSID_HevcDecoderMft);
+    DeleteTree(std::wstring(kClasses) + L"CLSID\\" + GuidStr(CLSID_HevcDecoderMft));
+}
+
 HRESULT RegisterWicDecoder(const std::wstring& dllPath) {
     const std::wstring clsid = GuidStr(CLSID_HeicWicDecoder);
     const std::wstring base = std::wstring(kClasses) + L"CLSID\\" + clsid;
@@ -254,7 +283,7 @@ HRESULT RegisterWicDecoder(const std::wstring& dllPath) {
     CHECK(SetString(base, L"Description", L"Decoder HEIC/HEIF basato su libheif e libde265"));
     CHECK(SetString(base, L"Vendor", GuidStr(GUID_VendorHeicViewer)));
     CHECK(SetString(base, L"ContainerFormat", GuidStr(GUID_ContainerFormatHeicViewer)));
-    CHECK(SetString(base, L"Version", L"1.1.0.0"));
+    CHECK(SetString(base, L"Version", L"1.2.0.0"));
     CHECK(SetString(base, L"Date", L"2026-11-22"));
     CHECK(SetString(base, L"SpecVersion", L"1.0.0.0"));
     CHECK(SetString(base, L"ColorManagementVersion", L"1.0.0.0"));
@@ -298,6 +327,7 @@ STDAPI DllRegisterServer() {
     HRESULT hr = RegisterWicDecoder(path);
     if (SUCCEEDED(hr)) hr = RegisterThumbnailProvider(path);
     if (SUCCEEDED(hr)) hr = RegisterVideoThumbnailProvider(path);
+    if (SUCCEEDED(hr)) hr = RegisterHevcDecoderMft(path);
     SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, nullptr, nullptr);
     return hr;
 }
@@ -316,6 +346,7 @@ STDAPI DllUnregisterServer() {
     DeleteTree(std::wstring(kClasses) + kPhotoViewerProgId + kThumbHandlerKey);
     DeleteValue(L"Software\\Microsoft\\Windows\\CurrentVersion\\Shell Extensions\\Approved", thumb.c_str());
     UnregisterVideoThumbnailProvider();
+    UnregisterHevcDecoderMft();
 
     SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, nullptr, nullptr);
     return S_OK;

@@ -1,6 +1,6 @@
 ; HEIC Viewer - installer (Inno Setup 6)
 
-#define AppVersion "1.1.0"
+#define AppVersion "1.2.0"
 
 [Setup]
 AppId={{B3B9A4E0-6C2D-4F5A-9E1B-0D7C2A1F4E10}
@@ -26,7 +26,7 @@ UninstallDisplayIcon={sys}\imageres.dll,-72
 Name: "it"; MessagesFile: "compiler:Languages\Italian.isl"
 
 [Messages]
-FinishedLabel=Fatto! Le foto HEIC e i video .MOV ora hanno le miniature in Esplora file.%n%nSe facendo doppio clic una foto non si apre nel Visualizzatore foto di Windows: tasto destro sulla foto > Apri con > Scegli un'altra app > Visualizzatore foto di Windows > spunta "Usa sempre questa app".
+FinishedLabel=Fatto! Foto HEIC e video .MOV dell'iPhone ora hanno le miniature e si aprono gratis.%n%nUna volta sola per tipo di file: tasto destro > Apri con > Scegli un'altra app > spunta "Usa sempre questa app" e scegli:%n- foto .HEIC: Visualizzatore foto di Windows%n- video .MOV / .MP4: Windows Media Player
 
 [Tasks]
 Name: "removems"; Description: "Rimuovi ""Estensioni immagine HEIF"" di Microsoft (senza il codec HEVC a pagamento non funziona e può interferire)"
@@ -57,6 +57,14 @@ Root: HKLM; Subkey: "SOFTWARE\Microsoft\Windows Photo Viewer\Capabilities\FileAs
 Root: HKLM; Subkey: "SOFTWARE\Microsoft\Windows Photo Viewer\Capabilities\FileAssociations"; ValueType: string; ValueName: ".heif"; ValueData: "PhotoViewer.FileAssoc.Heic"; Flags: uninsdeletevalue
 Root: HKLM; Subkey: "SOFTWARE\Microsoft\Windows Photo Viewer\Capabilities\FileAssociations"; ValueType: string; ValueName: ".hif";  ValueData: "PhotoViewer.FileAssoc.Heic"; Flags: uninsdeletevalue
 Root: HKLM; Subkey: "SOFTWARE\RegisteredApplications"; ValueType: string; ValueName: "Windows Photo Viewer"; ValueData: "SOFTWARE\Microsoft\Windows Photo Viewer\Capabilities"
+
+; Windows Media Player compare in "Apri con" per i video
+Root: HKLM; Subkey: "SOFTWARE\Classes\.mov\OpenWithList\wmplayer.exe"; Flags: uninsdeletekey
+Root: HKLM; Subkey: "SOFTWARE\Classes\.mp4\OpenWithList\wmplayer.exe"; Flags: uninsdeletekey
+Root: HKLM; Subkey: "SOFTWARE\Classes\.m4v\OpenWithList\wmplayer.exe"; Flags: uninsdeletekey
+Root: HKLM; Subkey: "SOFTWARE\Classes\.mkv\OpenWithList\wmplayer.exe"; Flags: uninsdeletekey
+Root: HKLM; Subkey: "SOFTWARE\Classes\.3gp\OpenWithList\wmplayer.exe"; Flags: uninsdeletekey
+Root: HKLM; Subkey: "SOFTWARE\Classes\.mov"; ValueType: string; ValueName: "PerceivedType"; ValueData: "video"; Flags: createvalueifdoesntexist
 
 [Run]
 Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -Command ""Get-AppxPackage -Name Microsoft.HEIFImageExtension | Remove-AppxPackage"""; StatusMsg: "Rimozione Estensioni immagine HEIF di Microsoft..."; Flags: runhidden runasoriginaluser waituntilterminated; Tasks: removems
