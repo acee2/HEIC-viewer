@@ -17,16 +17,25 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Configura (vcpkg scarica e compila libheif + libde265)
+      - name: Configura e compila (64 bit)
         shell: pwsh
         run: |
           cmake -S . -B build -A x64 `
             -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT\scripts\buildsystems\vcpkg.cmake" `
             -DVCPKG_TARGET_TRIPLET=x64-windows-static
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cmake --build build --config Release
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      - name: Compila la DLL
+      - name: Configura e compila (32 bit, per Windows Media Player)
         shell: pwsh
-        run: cmake --build build --config Release
+        run: |
+          cmake -S . -B build32 -A Win32 `
+            -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT\scripts\buildsystems\vcpkg.cmake" `
+            -DVCPKG_TARGET_TRIPLET=x86-windows-static
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cmake --build build32 --config Release
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Crea l'installer
         shell: pwsh

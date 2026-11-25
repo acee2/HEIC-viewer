@@ -77,8 +77,11 @@ private:
     std::vector<std::vector<BYTE>> m_parameterSets;
     int m_nalLengthSize = 4;     // usato solo se i campioni non sono in formato Annex B
 
-    UINT32 m_width = 0;
+    UINT32 m_srcWidth = 0;    // dimensioni del video codificato
+    UINT32 m_srcHeight = 0;
+    UINT32 m_width = 0;       // dimensioni in uscita (dopo la rotazione)
     UINT32 m_height = 0;
+    UINT32 m_rotation = 0;    // gradi in senso orario da applicare
     LONGLONG m_frameDuration = 333667;  // 29.97 fps di default
     LONGLONG m_lastTime = 0;
     bool m_drained = false;

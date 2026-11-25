@@ -1,6 +1,6 @@
 ; HEIC Viewer - installer (Inno Setup 6)
 
-#define AppVersion "1.2.0"
+#define AppVersion "1.3.0"
 
 [Setup]
 AppId={{B3B9A4E0-6C2D-4F5A-9E1B-0D7C2A1F4E10}
@@ -34,6 +34,7 @@ Name: "thumbs"; Description: "Rigenera subito le miniature (riavvia Esplora file
 
 [Files]
 Source: "..\build\Release\HeicViewer.dll"; DestDir: "{app}"; Flags: ignoreversion regserver restartreplace uninsrestartdelete
+Source: "..\build32\Release\HeicViewer.dll"; DestDir: "{app}\x86"; Flags: 32bit ignoreversion regserver restartreplace uninsrestartdelete
 
 [Registry]
 ; Tipo di file aperto dal Visualizzatore foto di Windows classico
@@ -64,7 +65,6 @@ Root: HKLM; Subkey: "SOFTWARE\Classes\.mp4\OpenWithList\wmplayer.exe"; Flags: un
 Root: HKLM; Subkey: "SOFTWARE\Classes\.m4v\OpenWithList\wmplayer.exe"; Flags: uninsdeletekey
 Root: HKLM; Subkey: "SOFTWARE\Classes\.mkv\OpenWithList\wmplayer.exe"; Flags: uninsdeletekey
 Root: HKLM; Subkey: "SOFTWARE\Classes\.3gp\OpenWithList\wmplayer.exe"; Flags: uninsdeletekey
-Root: HKLM; Subkey: "SOFTWARE\Classes\.mov"; ValueType: string; ValueName: "PerceivedType"; ValueData: "video"; Flags: createvalueifdoesntexist
 
 [Run]
 Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -Command ""Get-AppxPackage -Name Microsoft.HEIFImageExtension | Remove-AppxPackage"""; StatusMsg: "Rimozione Estensioni immagine HEIF di Microsoft..."; Flags: runhidden runasoriginaluser waituntilterminated; Tasks: removems

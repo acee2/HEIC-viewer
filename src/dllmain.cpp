@@ -8,7 +8,10 @@
 #include <mfapi.h>
 #include <mftransform.h>
 
+#include <algorithm>
 #include <cstring>
+#include <utility>
+#include <vector>
 #include <cwchar>
 #include <new>
 #include <string>
@@ -107,8 +110,8 @@ const wchar_t* const kWicDecodersCategory = L"{7ED96837-96F0-4812-B211-F13C24117
 const wchar_t* const kPixelFormatBGRA = L"{6fddc324-4e03-4bfe-b185-3d77768dc90f}";
 const wchar_t* const kPhotoViewerProgId = L"PhotoViewer.FileAssoc.Heic";
 const wchar_t* const kExtensions[] = {L".heic", L".heif", L".hif"};
-const wchar_t* const kVideoExtensions[] = {L".mov"};
-const wchar_t* const kBackupKey = L"Software\\HEIC Viewer\\PreviousThumbnailHandlers";
+const wchar_t* const kVideoExtensions[] = {L".mov", L".mp4", L".m4v"};
+const wchar_t* const kBackupKey = L"Software\\HEIC Viewer\\PreviousVideoThumbnailHandlers";
 const char* const kBrands[] = {"heic", "heix", "hevc", "hevx", "heim", "heis", "mif1", "msf1"};
 
 std::wstring GuidStr(const GUID& g) {
@@ -192,8 +195,48 @@ HRESULT RegisterThumbnailProvider(const std::wstring& dllPath) {
     return S_OK;
 }
 
-// Registra la miniatura per un'estensione video, salvando il gestore
-// precedente di Windows per poterlo rimettere alla disinstallazione.
+// Chiavi del registro dove va messo il generatore di miniature video:
+// estensione, SystemFileAssociations e i tipi di file (ProgID) a cui l'estensione
+// è collegata (Windows Media Player, l'app scelta con "Apri con"...). Un gestore
+// registrato sul ProgID ha la precedenza su quello dell'estensione.
+std::vector<std::wstring> VideoThumbnailKeys() {
+    std::vector<std::wstring> keys;
+    std::vector<std::wstring> progIds = {L"WMP11.AssocFile.MOV", L"WMP11.AssocFile.MP4", L"WMP11.AssocFile.M4V"};
+
+    for (const wchar_t* ext : kVideoExtensions) {
+        keys.push_back(std::wstring(kClasses) + ext + kThumbHandlerKey);
+        keys.push_back(std::wstring(kClasses) + L"SystemFileAssociations\\" + ext + kThumbHandlerKey);
+
+        // ProgID scelto dall'utente
+        wchar_t buf[256] = {};
+        DWORD size = sizeof(buf);
+        const std::wstring userChoice =
+            std::wstring(L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\") + ext + L"\\UserChoice";
+        if (RegGetValueW(HKEY_CURRENT_USER, userChoice.c_str(), L"ProgId", RRF_RT_REG_SZ, nullptr, buf, &size) ==
+                ERROR_SUCCESS && buf[0]) {
+            progIds.push_back(buf);
+        }
+        // ProgID predefinito dell'estensione
+        size = sizeof(buf);
+        buf[0] = 0;
+        if (RegGetValueW(HKEY_CLASSES_ROOT, ext, nullptr, RRF_RT_REG_SZ, nullptr, buf, &size) == ERROR_SUCCESS &&
+            buf[0]) {
+            progIds.push_back(buf);
+        }
+    }
+
+    for (const auto& id : progIds) {
+        HKEY k = nullptr;
+        if (RegOpenKeyExW(HKEY_CLASSES_ROOT, id.c_str(), 0, KEY_READ, &k) != ERROR_SUCCESS) continue;
+        RegCloseKey(k);
+        const std::wstring key = std::wstring(kClasses) + id + kThumbHandlerKey;
+        if (std::find(keys.begin(), keys.end(), key) == keys.end()) keys.push_back(key);
+    }
+    return keys;
+}
+
+// Registra la miniatura video, salvando i gestori precedenti per
+// poterli rimettere alla disinstallazione.
 HRESULT RegisterVideoThumbnailProvider(const std::wstring& dllPath) {
     const std::wstring clsid = GuidStr(CLSID_HeicVideoThumbnailProvider);
     const std::wstring base = std::wstring(kClasses) + L"CLSID\\" + clsid;
@@ -202,22 +245,32 @@ HRESULT RegisterVideoThumbnailProvider(const std::wstring& dllPath) {
     CHECK(SetString(base + L"\\InprocServer32", nullptr, dllPath));
     CHECK(SetString(base + L"\\InprocServer32", L"ThreadingModel", L"Apartment"));
 
-    for (const wchar_t* ext : kVideoExtensions) {
-        const std::wstring keys[] = {
-            std::wstring(kClasses) + ext + kThumbHandlerKey,
-            std::wstring(kClasses) + L"SystemFileAssociations\\" + ext + kThumbHandlerKey,
+    // Aggiornamento dalla 1.1/1.2: recupera i gestori originali salvati allora.
+    {
+        const wchar_t* oldBackup = L"Software\\HEIC Viewer\\PreviousThumbnailHandlers";
+        const std::pair<const wchar_t*, std::wstring> legacy[] = {
+            {L"ext.mov", std::wstring(kClasses) + L".mov" + kThumbHandlerKey},
+            {L"sfa.mov", std::wstring(kClasses) + L"SystemFileAssociations\\.mov" + kThumbHandlerKey},
         };
-        const wchar_t* backupNames[] = {L"ext", L"sfa"};
-        for (int i = 0; i < 2; ++i) {
-            std::wstring previous;
-            const std::wstring backupName = std::wstring(backupNames[i]) + ext;
-            std::wstring alreadySaved;
-            if (GetString(keys[i], nullptr, previous) && _wcsicmp(previous.c_str(), clsid.c_str()) != 0 &&
-                !GetString(kBackupKey, backupName.c_str(), alreadySaved)) {
-                CHECK(SetString(kBackupKey, backupName.c_str(), previous));
-            }
-            CHECK(SetString(keys[i], nullptr, clsid));
+        for (const auto& l : legacy) {
+            std::wstring old, tmp;
+            if (GetString(oldBackup, l.first, old) && !GetString(kBackupKey, l.second.c_str(), tmp))
+                SetString(kBackupKey, l.second.c_str(), old);
         }
+        DeleteTree(oldBackup);
+    }
+
+    for (const auto& key : VideoThumbnailKeys()) {
+        std::wstring previous, alreadySaved;
+        if (!GetString(kBackupKey, key.c_str(), alreadySaved)) {
+            if (!GetString(key, nullptr, previous) || _wcsicmp(previous.c_str(), clsid.c_str()) == 0) previous.clear();
+            CHECK(SetString(kBackupKey, key.c_str(), previous));  // "" = non c'era niente
+        }
+        CHECK(SetString(key, nullptr, clsid));
+    }
+    for (const wchar_t* ext : kVideoExtensions) {
+        CHECK(SetString(std::wstring(kClasses) + ext, L"PerceivedType", L"video"));
+        CHECK(SetString(L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\KindMap", ext, L"video"));
     }
     CHECK(SetString(L"Software\\Microsoft\\Windows\\CurrentVersion\\Shell Extensions\\Approved", clsid.c_str(),
                     L"HEIC Viewer - Miniature video"));
@@ -226,21 +279,28 @@ HRESULT RegisterVideoThumbnailProvider(const std::wstring& dllPath) {
 
 void UnregisterVideoThumbnailProvider() {
     const std::wstring clsid = GuidStr(CLSID_HeicVideoThumbnailProvider);
-    for (const wchar_t* ext : kVideoExtensions) {
-        const std::wstring keys[] = {
-            std::wstring(kClasses) + ext + kThumbHandlerKey,
-            std::wstring(kClasses) + L"SystemFileAssociations\\" + ext + kThumbHandlerKey,
-        };
-        const wchar_t* backupNames[] = {L"ext", L"sfa"};
-        for (int i = 0; i < 2; ++i) {
-            std::wstring current, previous;
-            if (!GetString(keys[i], nullptr, current) || _wcsicmp(current.c_str(), clsid.c_str()) != 0) continue;
-            const std::wstring backupName = std::wstring(backupNames[i]) + ext;
-            if (GetString(kBackupKey, backupName.c_str(), previous)) {
-                SetString(keys[i], nullptr, previous);
-            } else {
-                DeleteTree(keys[i]);
-            }
+
+    HKEY backup = nullptr;
+    if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, kBackupKey, 0, KEY_READ, &backup) == ERROR_SUCCESS) {
+        std::vector<std::pair<std::wstring, std::wstring>> entries;
+        for (DWORD i = 0;; ++i) {
+            wchar_t name[1024];
+            DWORD nameLen = 1024;
+            wchar_t data[256] = {};
+            DWORD dataSize = sizeof(data);
+            DWORD type = 0;
+            if (RegEnumValueW(backup, i, name, &nameLen, nullptr, &type, reinterpret_cast<BYTE*>(data), &dataSize) !=
+                ERROR_SUCCESS)
+                break;
+            if (type == REG_SZ) entries.emplace_back(name, data);
+        }
+        RegCloseKey(backup);
+
+        for (const auto& e : entries) {
+            std::wstring current;
+            if (!GetString(e.first, nullptr, current) || _wcsicmp(current.c_str(), clsid.c_str()) != 0) continue;
+            if (e.second.empty()) DeleteTree(e.first);
+            else SetString(e.first, nullptr, e.second);
         }
     }
     DeleteTree(std::wstring(kClasses) + L"CLSID\\" + clsid);
@@ -283,7 +343,7 @@ HRESULT RegisterWicDecoder(const std::wstring& dllPath) {
     CHECK(SetString(base, L"Description", L"Decoder HEIC/HEIF basato su libheif e libde265"));
     CHECK(SetString(base, L"Vendor", GuidStr(GUID_VendorHeicViewer)));
     CHECK(SetString(base, L"ContainerFormat", GuidStr(GUID_ContainerFormatHeicViewer)));
-    CHECK(SetString(base, L"Version", L"1.2.0.0"));
+    CHECK(SetString(base, L"Version", L"1.3.0.0"));
     CHECK(SetString(base, L"Date", L"2026-11-22"));
     CHECK(SetString(base, L"SpecVersion", L"1.0.0.0"));
     CHECK(SetString(base, L"ColorManagementVersion", L"1.0.0.0"));
@@ -325,9 +385,13 @@ STDAPI DllRegisterServer() {
     if (!GetModuleFileNameW(g_hModule, path, MAX_PATH)) return HRESULT_FROM_WIN32(GetLastError());
 
     HRESULT hr = RegisterWicDecoder(path);
+    if (SUCCEEDED(hr)) hr = RegisterHevcDecoderMft(path);
+#ifdef _WIN64
+    // Esplora file è a 64 bit: le miniature le registra solo la DLL a 64 bit.
+    // La DLL a 32 bit serve ai programmi a 32 bit (es. Windows Media Player).
     if (SUCCEEDED(hr)) hr = RegisterThumbnailProvider(path);
     if (SUCCEEDED(hr)) hr = RegisterVideoThumbnailProvider(path);
-    if (SUCCEEDED(hr)) hr = RegisterHevcDecoderMft(path);
+#endif
     SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, nullptr, nullptr);
     return hr;
 }
@@ -336,6 +400,7 @@ STDAPI DllUnregisterServer() {
     const std::wstring thumb = GuidStr(CLSID_HeicThumbnailProvider);
     const std::wstring dec = GuidStr(CLSID_HeicWicDecoder);
 
+#ifdef _WIN64
     DeleteTree(std::wstring(kClasses) + L"CLSID\\" + thumb);
     DeleteTree(std::wstring(kClasses) + L"CLSID\\" + dec);
     DeleteTree(std::wstring(kClasses) + L"CLSID\\" + kWicDecodersCategory + L"\\Instance\\" + dec);
@@ -346,6 +411,10 @@ STDAPI DllUnregisterServer() {
     DeleteTree(std::wstring(kClasses) + kPhotoViewerProgId + kThumbHandlerKey);
     DeleteValue(L"Software\\Microsoft\\Windows\\CurrentVersion\\Shell Extensions\\Approved", thumb.c_str());
     UnregisterVideoThumbnailProvider();
+#else
+    DeleteTree(std::wstring(kClasses) + L"CLSID\\" + dec);
+    DeleteTree(std::wstring(kClasses) + L"CLSID\\" + kWicDecodersCategory + L"\\Instance\\" + dec);
+#endif
     UnregisterHevcDecoderMft();
 
     SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, nullptr, nullptr);

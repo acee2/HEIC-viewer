@@ -1,6 +1,6 @@
 # HEIC Viewer per Windows
 
-Apre le foto HEIC/HEIF dell'iPhone nel classico **Visualizzatore foto di Windows** e mostra le **miniature in Esplora file**, anche dei **video .MOV** dell'iPhone (HEVC), che si aprono gratis in **Windows Media Player**.
+Apre le foto HEIC/HEIF dell'iPhone nel classico **Visualizzatore foto di Windows** e mostra le **miniature in Esplora file**, anche dei **video .MOV / .MP4** dell'iPhone (HEVC), che si aprono gratis in **Windows Media Player**.
 Gratis: usa i decoder open source [libheif](https://github.com/strukturag/libheif) + [libde265](https://github.com/strukturag/libde265), non il codec HEVC a pagamento di Microsoft.
 
 Non c'è nessun programma in esecuzione: è un'estensione di Windows (una DLL) che il sistema carica solo quando serve.
@@ -13,6 +13,7 @@ Non c'è nessun programma in esecuzione: è un'estensione di Windows (una DLL) c
 | `src/thumbnail.cpp` | Generatore di miniature per Esplora file (usa la miniatura incorporata nella foto quando basta, quindi è veloce) |
 | `src/video_decode.cpp` | Miniature dei .MOV: legge il file, prende il primo fotogramma chiave e lo decodifica con libde265 (HEVC) o con Windows (H.264) |
 | `src/hevc_mft.cpp` | Decoder video HEVC per Media Foundation (libde265): Windows Media Player riproduce i video HEVC senza il codec a pagamento |
+| `src/log.cpp` | In caso di errore scrive in `%LOCALAPPDATA%\HEIC Viewer\errori.log` |
 | `src/heic_decode.cpp` | Decodifica con libheif, rotazione già applicata |
 | `src/dllmain.cpp` | Registrazione COM/WIC nel registro |
 | `installer/HeicViewer.iss` | Installer (Inno Setup) con disinstallazione da "App installate" |

@@ -1,5 +1,6 @@
 #include "hevc_mft.h"
 #include "module.h"
+#include "log.h"
 
 #include <mferror.h>
 #include <libde265/de265.h>
@@ -146,6 +147,31 @@ void ToNv12(const de265_image* pic, UINT32 w, UINT32 h, std::vector<BYTE>& out) 
     }
 }
 
+template <class T>
+void RotatePlane(const T* src, UINT32 w, UINT32 h, T* dst, UINT32 deg) {
+    // deg in senso orario; dst ha dimensioni (h x w) per 90/270, (w x h) per 180.
+    for (UINT32 y = 0; y < h; ++y) {
+        for (UINT32 x = 0; x < w; ++x) {
+            UINT32 nx, ny, nw;
+            if (deg == 90) { nx = h - 1 - y; ny = x; nw = h; }
+            else if (deg == 180) { nx = w - 1 - x; ny = h - 1 - y; nw = w; }
+            else { nx = y; ny = w - 1 - x; nw = h; }
+            dst[static_cast<size_t>(ny) * nw + nx] = src[static_cast<size_t>(y) * w + x];
+        }
+    }
+}
+
+// Ruota un fotogramma NV12 (w x h) in senso orario.
+void RotateNv12(std::vector<BYTE>& frame, UINT32 w, UINT32 h, UINT32 deg) {
+    if (deg != 90 && deg != 180 && deg != 270) return;
+    std::vector<BYTE> out(frame.size());
+    RotatePlane<BYTE>(frame.data(), w, h, out.data(), deg);
+    const size_t ySize = static_cast<size_t>(w) * h;
+    RotatePlane<uint16_t>(reinterpret_cast<const uint16_t*>(frame.data() + ySize), w / 2, h / 2,
+                          reinterpret_cast<uint16_t*>(out.data() + ySize), deg);
+    frame.swap(out);
+}
+
 }  // namespace
 
 // ============================== Ciclo di vita ==============================
@@ -227,7 +253,8 @@ void HevcDecoderMft::Pump() {
     for (int guard = 0; guard < 100000; ++guard) {
         if (const de265_image* pic = de265_peek_next_picture(Ctx(m_decoder))) {
             Frame f;
-            ToNv12(pic, m_width, m_height, f.nv12);
+            ToNv12(pic, m_srcWidth, m_srcHeight, f.nv12);
+            RotateNv12(f.nv12, m_srcWidth, m_srcHeight, m_rotation);
             f.time = de265_get_image_PTS(pic);
             m_frames.push_back(std::move(f));
             de265_release_next_picture(Ctx(m_decoder));
@@ -334,10 +361,9 @@ HRESULT HevcDecoderMft::MakeOutputType(IMFMediaType** ppType) {
             MFSetAttributeRatio(type, MF_MT_PIXEL_ASPECT_RATIO, num, den);
         else
             MFSetAttributeRatio(type, MF_MT_PIXEL_ASPECT_RATIO, 1, 1);
-        UINT32 rotation = 0;
-        if (SUCCEEDED(m_inputType->GetUINT32(MF_MT_VIDEO_ROTATION, &rotation)))
-            type->SetUINT32(MF_MT_VIDEO_ROTATION, rotation);
     }
+    // La rotazione la applichiamo noi: il lettore riceve il video già dritto.
+    if (SUCCEEDED(hr)) type->SetUINT32(MF_MT_VIDEO_ROTATION, MFVideoRotationFormat_0);
 
     if (SUCCEEDED(hr)) *ppType = type;
     else if (type) type->Release();
@@ -375,8 +401,10 @@ IFACEMETHODIMP HevcDecoderMft::SetInputType(DWORD id, IMFMediaType* pType, DWORD
         return MF_E_INVALIDMEDIATYPE;
 
     UINT32 w = 0, h = 0;
-    if (FAILED(MFGetAttributeSize(pType, MF_MT_FRAME_SIZE, &w, &h)) || w == 0 || h == 0 || w > 16384 || h > 16384)
+    if (FAILED(MFGetAttributeSize(pType, MF_MT_FRAME_SIZE, &w, &h)) || w == 0 || h == 0 || w > 16384 || h > 16384) {
+        LogError(L"Decoder video: tipo HEVC senza dimensioni", MF_E_INVALIDMEDIATYPE);
         return MF_E_INVALIDMEDIATYPE;
+    }
 
     if (dwFlags & MFT_SET_TYPE_TEST_ONLY) return S_OK;
 
@@ -385,8 +413,17 @@ IFACEMETHODIMP HevcDecoderMft::SetInputType(DWORD id, IMFMediaType* pType, DWORD
     m_inputType->AddRef();
     if (m_outputType) { m_outputType->Release(); m_outputType = nullptr; }
 
-    m_width = (w + 1) & ~1u;
-    m_height = (h + 1) & ~1u;
+    m_srcWidth = (w + 1) & ~1u;
+    m_srcHeight = (h + 1) & ~1u;
+
+    // MF_MT_VIDEO_ROTATION = gradi in senso antiorario di cui il contenuto è ruotato:
+    // per raddrizzarlo lo giriamo dello stesso valore in senso orario.
+    UINT32 rot = 0;
+    m_rotation = SUCCEEDED(pType->GetUINT32(MF_MT_VIDEO_ROTATION, &rot)) ? (rot % 360) : 0;
+    if (m_rotation != 90 && m_rotation != 180 && m_rotation != 270) m_rotation = 0;
+    const bool swap = (m_rotation == 90 || m_rotation == 270);
+    m_width = swap ? m_srcHeight : m_srcWidth;
+    m_height = swap ? m_srcWidth : m_srcHeight;
 
     UINT32 num = 0, den = 0;
     if (SUCCEEDED(MFGetAttributeRatio(pType, MF_MT_FRAME_RATE, &num, &den)) && num && den)
@@ -411,6 +448,8 @@ IFACEMETHODIMP HevcDecoderMft::SetInputType(DWORD id, IMFMediaType* pType, DWORD
 
     ClearQueue();
     CreateDecoder();
+    if (!m_decoder) LogError(L"Decoder video: libde265 non avviato", E_OUTOFMEMORY);
+    if (m_parameterSets.empty()) LogError(L"Decoder video: mancano VPS/SPS/PPS nel tipo di ingresso", S_FALSE);
     return m_decoder ? S_OK : E_OUTOFMEMORY;
 }
 

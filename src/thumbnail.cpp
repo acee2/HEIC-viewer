@@ -2,6 +2,7 @@
 #include "heic_decode.h"
 #include "module.h"
 #include "video_decode.h"
+#include "log.h"
 
 #include <algorithm>
 #include <cstring>
@@ -53,13 +54,12 @@ IFACEMETHODIMP HeicThumbnailProvider::GetThumbnail(UINT cx, HBITMAP* phbmp, WTS_
     HRESULT hr;
     if (m_video) {
         hr = DecodeVideoFrame(m_stream, img);
-        if (FAILED(hr)) return hr;
+        if (FAILED(hr)) { LogError(L"Miniatura video", hr); return hr; }
     } else {
         std::vector<BYTE> data;
         hr = ReadAllFromStream(m_stream, data);
-        if (FAILED(hr)) return hr;
-        hr = DecodeHeic(data.data(), data.size(), img, cx);
-        if (FAILED(hr)) return hr;
+        if (SUCCEEDED(hr)) hr = DecodeHeic(data.data(), data.size(), img, cx);
+        if (FAILED(hr)) { LogError(L"Miniatura HEIC", hr); return hr; }
     }
 
     // Adatta al riquadro cx x cx mantenendo le proporzioni.

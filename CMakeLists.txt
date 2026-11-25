@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.21)
 # CRT statico: la DLL non dipende da nessun runtime da installare.
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
-project(HeicViewer VERSION 1.2.0 LANGUAGES CXX)
+project(HeicViewer VERSION 1.3.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -18,6 +18,7 @@ add_library(HeicViewer SHARED
     src/wic_decoder.cpp
     src/video_decode.cpp
     src/hevc_mft.cpp
+    src/log.cpp
     src/HeicViewer.def
 )
 
