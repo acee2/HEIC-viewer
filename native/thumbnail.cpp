@@ -4,8 +4,129 @@
 #include "video_decode.h"
 #include "log.h"
 
+#include <wincodec.h>
+
 #include <algorithm>
 #include <cstring>
+#include <vector>
+
+namespace {
+
+enum class Kind { Heic, Video, Image };
+
+bool Has(const BYTE* h, ULONG n, ULONG at, const char* sig) {
+    const size_t len = std::strlen(sig);
+    return n >= at + len && std::memcmp(h + at, sig, len) == 0;
+}
+
+// Riconosce foto HEIC, video (con il tipo MIME per Media Foundation) e altre foto.
+Kind Classify(const BYTE* h, ULONG n, const wchar_t*& videoType) {
+    videoType = nullptr;
+    if (LooksLikeHeic(h, n)) return Kind::Heic;
+    if (Has(h, n, 4, "ftyp")) {
+        // AVIF è una foto, il resto (mp4, mov/qt, m4v, 3gp...) è video.
+        if (Has(h, n, 8, "avif") || Has(h, n, 8, "avis")) return Kind::Image;
+        videoType = L"video/mp4";  // il gestore MP4 di Windows legge anche i .mov
+        return Kind::Video;
+    }
+    // QuickTime vecchi senza "ftyp" (iniziano con moov/mdat/wide/free).
+    if (Has(h, n, 4, "moov") || Has(h, n, 4, "mdat") || Has(h, n, 4, "wide") || Has(h, n, 4, "free")) {
+        videoType = L"video/mp4";
+        return Kind::Video;
+    }
+    if (n >= 4 && h[0] == 0x1A && h[1] == 0x45 && h[2] == 0xDF && h[3] == 0xA3) {  // Matroska / WebM
+        videoType = L"video/x-matroska";
+        return Kind::Video;
+    }
+    if (Has(h, n, 0, "RIFF") && Has(h, n, 8, "AVI ")) { videoType = L"video/avi"; return Kind::Video; }
+    if (n >= 4 && h[0] == 0x30 && h[1] == 0x26 && h[2] == 0xB2 && h[3] == 0x75) {    // ASF / WMV
+        videoType = L"video/x-ms-asf";
+        return Kind::Video;
+    }
+    if (n >= 4 && h[0] == 0 && h[1] == 0 && h[2] == 1 && (h[3] == 0xBA || h[3] == 0xB3)) {  // MPEG-PS
+        videoType = L"video/mpeg";
+        return Kind::Video;
+    }
+    if (n >= 1 && h[0] == 0x47 && !Has(h, n, 0, "GIF8")) {  // MPEG-TS
+        videoType = L"video/mp2t";
+        return Kind::Video;
+    }
+    return Kind::Image;
+}
+
+// Decodifica una foto con WIC (decoder di Windows), già ridotta e girata secondo l'EXIF.
+HRESULT DecodeWithWic(IStream* stream, UINT cx, DecodedImage& img) {
+    IWICImagingFactory* factory = nullptr;
+    IWICBitmapDecoder* decoder = nullptr;
+    IWICBitmapFrameDecode* frame = nullptr;
+    IWICBitmapScaler* scaler = nullptr;
+    IWICFormatConverter* converter = nullptr;
+    IWICMetadataQueryReader* meta = nullptr;
+
+    HRESULT hr = CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER,
+                                  __uuidof(IWICImagingFactory), reinterpret_cast<void**>(&factory));
+    if (SUCCEEDED(hr)) hr = factory->CreateDecoderFromStream(stream, nullptr, WICDecodeMetadataCacheOnDemand, &decoder);
+    if (SUCCEEDED(hr)) hr = decoder->GetFrame(0, &frame);
+
+    UINT w = 0, h = 0;
+    if (SUCCEEDED(hr)) hr = frame->GetSize(&w, &h);
+    if (SUCCEEDED(hr) && (w == 0 || h == 0)) hr = E_FAIL;
+
+    // Orientamento EXIF (foto verticali dei telefoni).
+    int rotation = 0;
+    if (SUCCEEDED(hr) && SUCCEEDED(frame->GetMetadataQueryReader(&meta))) {
+        PROPVARIANT v;
+        PropVariantInit(&v);
+        if (SUCCEEDED(meta->GetMetadataByName(L"System.Photo.Orientation", &v)) && v.vt == VT_UI2) {
+            switch (v.uiVal) {
+                case 3: case 4: rotation = 180; break;
+                case 5: case 6: rotation = 90; break;
+                case 7: case 8: rotation = 270; break;
+                default: break;
+            }
+        }
+        PropVariantClear(&v);
+    }
+
+    UINT nw = w, nh = h;
+    const UINT longest = std::max(w, h);
+    if (SUCCEEDED(hr) && longest > cx) {
+        nw = std::max<UINT>(1, static_cast<UINT>(static_cast<unsigned long long>(w) * cx / longest));
+        nh = std::max<UINT>(1, static_cast<UINT>(static_cast<unsigned long long>(h) * cx / longest));
+    }
+    if (SUCCEEDED(hr)) hr = factory->CreateBitmapScaler(&scaler);
+    if (SUCCEEDED(hr)) hr = scaler->Initialize(frame, nw, nh, WICBitmapInterpolationModeFant);
+    if (SUCCEEDED(hr)) hr = factory->CreateFormatConverter(&converter);
+    if (SUCCEEDED(hr))
+        hr = converter->Initialize(scaler, GUID_WICPixelFormat32bppBGRA, WICBitmapDitherTypeNone, nullptr, 0.0,
+                                   WICBitmapPaletteTypeCustom);
+    if (SUCCEEDED(hr)) {
+        img.width = nw;
+        img.height = nh;
+        img.bgra.resize(static_cast<size_t>(nw) * nh * 4);
+        hr = converter->CopyPixels(nullptr, nw * 4, static_cast<UINT>(img.bgra.size()), img.bgra.data());
+    }
+    if (SUCCEEDED(hr)) {
+        // Copertine senza trasparenza: il nero dei pixel trasparenti diventerebbe un riquadro nero.
+        for (size_t i = 0; i < img.bgra.size(); i += 4) {
+            const unsigned a = img.bgra[i + 3];
+            if (a == 255) continue;
+            for (int c = 0; c < 3; ++c) img.bgra[i + c] = static_cast<BYTE>((img.bgra[i + c] * a + 255 * (255 - a)) / 255);
+            img.bgra[i + 3] = 255;
+        }
+        RotateBGRA(img, rotation);
+    }
+
+    if (meta) meta->Release();
+    if (converter) converter->Release();
+    if (scaler) scaler->Release();
+    if (frame) frame->Release();
+    if (decoder) decoder->Release();
+    if (factory) factory->Release();
+    return hr;
+}
+
+}  // namespace
 
 HeicThumbnailProvider::HeicThumbnailProvider(bool video) : m_video(video) { ++g_dllRefs; }
 
@@ -51,29 +172,38 @@ IFACEMETHODIMP HeicThumbnailProvider::GetThumbnail(UINT cx, HBITMAP* phbmp, WTS_
     *pdwAlpha = WTSAT_RGB;
     if (!m_stream || cx == 0) return E_UNEXPECTED;
 
-    DecodedImage img;
-    HRESULT hr;
-    if (m_video) {
-        hr = DecodeVideoFrame(m_stream, img);
-        if (FAILED(hr)) { LogError(L"Miniatura video", hr); return hr; }
-    } else {
-        // Le foto che non sono HEIC/HEIF le fa il generatore di Windows (stesse copertine di sempre).
-        BYTE header[12] = {};
-        ULONG read = 0;
-        LARGE_INTEGER zero = {};
-        m_stream->Seek(zero, STREAM_SEEK_SET, nullptr);
-        m_stream->Read(header, sizeof(header), &read);
-        m_stream->Seek(zero, STREAM_SEEK_SET, nullptr);
-        if (!LooksLikeHeic(header, read)) return DelegateToWindows(cx, phbmp, pdwAlpha);
+    // Riconosce il contenuto dai primi byte: lo stesso generatore funziona per
+    // foto e video, qualunque sia il tipo di file a cui Windows l'ha collegato.
+    BYTE header[64] = {};
+    ULONG read = 0;
+    LARGE_INTEGER zero = {};
+    m_stream->Seek(zero, STREAM_SEEK_SET, nullptr);
+    m_stream->Read(header, sizeof(header), &read);
+    m_stream->Seek(zero, STREAM_SEEK_SET, nullptr);
+    const wchar_t* videoType = nullptr;
+    const Kind kind = Classify(header, read, videoType);
 
+    DecodedImage img;
+    HRESULT hr = E_FAIL;
+    if (kind == Kind::Video) {
+        hr = DecodeVideoFrame(m_stream, img, videoType);
+        if (FAILED(hr)) { LogError(L"Copertina video", hr, videoType); return hr; }
+    } else if (kind == Kind::Heic) {
         std::vector<BYTE> data;
         hr = ReadAllFromStream(m_stream, data);
         if (SUCCEEDED(hr)) hr = DecodeHeic(data.data(), data.size(), img, cx);
-        if (FAILED(hr)) {
-            LogError(L"Miniatura HEIC", hr);
-            m_stream->Seek(zero, STREAM_SEEK_SET, nullptr);
-            return DelegateToWindows(cx, phbmp, pdwAlpha);
-        }
+        if (FAILED(hr)) LogError(L"Copertina HEIC", hr);
+    } else {
+        hr = DecodeWithWic(m_stream, cx, img);
+        if (FAILED(hr)) LogError(L"Copertina foto (WIC)", hr);
+    }
+
+    if (FAILED(hr) && kind != Kind::Video) {
+        // Ultima risorsa: il generatore di copertine di Windows.
+        m_stream->Seek(zero, STREAM_SEEK_SET, nullptr);
+        hr = DelegateToWindows(cx, phbmp, pdwAlpha);
+        if (FAILED(hr)) LogError(L"Copertina foto (generatore di Windows)", hr);
+        return hr;
     }
 
     // Adatta al riquadro cx x cx mantenendo le proporzioni.

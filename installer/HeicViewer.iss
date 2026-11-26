@@ -2,7 +2,7 @@
 ; Installa l'app e la registra in "Apri con" / "App predefinite"
 ; SENZA impostarla come predefinita: la scelta resta all'utente.
 
-#define AppVersion "2.1.0"
+#define AppVersion "2.2.0"
 
 [Setup]
 AppId={{6E1B3C52-8F0A-4D7B-9C1E-2A5D4F7B8C90}
@@ -56,6 +56,8 @@ Root: HKLM; Subkey: "SOFTWARE\Classes\CLSID\{{6E1B3C54-8F0A-4D7B-9C1E-2A5D4F7B8C
 Root: HKLM; Subkey: "SOFTWARE\Microsoft\Windows\CurrentVersion\Shell Extensions\Approved"; ValueType: string; ValueName: "{{6E1B3C54-8F0A-4D7B-9C1E-2A5D4F7B8C90}"; ValueData: "HEIC Viewer - copertine video"; Flags: uninsdeletevalue
 Root: HKLM; Subkey: "SOFTWARE\Classes\HeicViewer.Image\ShellEx\{{e357fccd-a995-4576-b01f-234630154e96}"; ValueType: string; ValueName: ""; ValueData: "{{6E1B3C53-8F0A-4D7B-9C1E-2A5D4F7B8C90}"
 Root: HKLM; Subkey: "SOFTWARE\Classes\HeicViewer.Video\ShellEx\{{e357fccd-a995-4576-b01f-234630154e96}"; ValueType: string; ValueName: ""; ValueData: "{{6E1B3C54-8F0A-4D7B-9C1E-2A5D4F7B8C90}"
+; "Apri con" a volte collega i file al programma invece che ai suoi tipi di file: copertine anche lì
+Root: HKLM; Subkey: "SOFTWARE\Classes\Applications\HeicViewer.exe\ShellEx\{{e357fccd-a995-4576-b01f-234630154e96}"; ValueType: string; ValueName: ""; ValueData: "{{6E1B3C53-8F0A-4D7B-9C1E-2A5D4F7B8C90}"
 
 ; --- Registrazione dell'app ---
 Root: HKLM; Subkey: "SOFTWARE\Classes\HeicViewer.Image"; ValueType: string; ValueName: ""; ValueData: "Foto (HEIC Viewer)"; Flags: uninsdeletekey

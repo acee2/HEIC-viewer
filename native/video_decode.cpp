@@ -1,4 +1,5 @@
 #include "video_decode.h"
+#include "log.h"
 
 #include <mfapi.h>
 #include <mfidl.h>
@@ -9,6 +10,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstring>
+#include <cwchar>
 #include <vector>
 
 namespace {
@@ -390,7 +392,7 @@ HRESULT DecodeHevcFrame(const Track& t, const std::vector<BYTE>& sampleData, Dec
 // Ripiego: Media Foundation (H.264 e altri codec già supportati da Windows)
 // ---------------------------------------------------------------------------
 
-HRESULT DecodeWithMediaFoundation(IStream* stream, DecodedImage& img) {
+HRESULT DecodeWithMediaFoundation(IStream* stream, DecodedImage& img, const wchar_t* contentType) {
     LARGE_INTEGER zero = {};
     stream->Seek(zero, STREAM_SEEK_SET, nullptr);
 
@@ -406,6 +408,15 @@ HRESULT DecodeWithMediaFoundation(IStream* stream, DecodedImage& img) {
     const DWORD videoStream = static_cast<DWORD>(MF_SOURCE_READER_FIRST_VIDEO_STREAM);
 
     hr = MFCreateMFByteStreamOnStream(stream, &byteStream);
+    // Senza nome del file Media Foundation non sa che tipo di contenitore è:
+    // glielo diciamo noi (altrimenti errore 0xC00D36C4).
+    if (SUCCEEDED(hr) && contentType) {
+        IMFAttributes* bsAttrs = nullptr;
+        if (SUCCEEDED(byteStream->QueryInterface(__uuidof(IMFAttributes), reinterpret_cast<void**>(&bsAttrs)))) {
+            bsAttrs->SetString(MF_BYTESTREAM_CONTENT_TYPE, contentType);
+            bsAttrs->Release();
+        }
+    }
     if (SUCCEEDED(hr)) hr = MFCreateAttributes(&attrs, 1);
     if (SUCCEEDED(hr)) hr = attrs->SetUINT32(MF_SOURCE_READER_ENABLE_VIDEO_PROCESSING, TRUE);
     if (SUCCEEDED(hr)) hr = MFCreateSourceReaderFromByteStream(byteStream, attrs, &reader);
@@ -500,7 +511,7 @@ void RotateBGRA(DecodedImage& img, int degreesClockwise) {
     img.height = nh;
 }
 
-HRESULT DecodeVideoFrame(IStream* stream, DecodedImage& img) {
+HRESULT DecodeVideoFrame(IStream* stream, DecodedImage& img, const wchar_t* contentType) {
     if (!stream) return E_POINTER;
 
     Track track;
@@ -520,9 +531,12 @@ HRESULT DecodeVideoFrame(IStream* stream, DecodedImage& img) {
         }
     }
 
+    if (parsed && track.IsHevc() && FAILED(hr)) LogError(L"Copertina video: decodifica HEVC non riuscita", hr);
+    if (!parsed && contentType && wcscmp(contentType, L"video/mp4") == 0)
+        LogError(L"Copertina video: struttura MP4/MOV non letta", hr);
     if (FAILED(hr)) {
         img = DecodedImage();
-        hr = DecodeWithMediaFoundation(stream, img);
+        hr = DecodeWithMediaFoundation(stream, img, contentType);
     }
     if (SUCCEEDED(hr) && parsed) RotateBGRA(img, track.rotation);
     return hr;
