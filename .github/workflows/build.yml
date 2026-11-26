@@ -3,7 +3,6 @@ name: Build HEIC Viewer
 on:
   push:
     branches: [main]
-    tags: ["v*"]
   workflow_dispatch:
 
 permissions:
@@ -17,33 +16,23 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Configura e compila (64 bit)
-        shell: pwsh
-        run: |
-          cmake -S . -B build -A x64 `
-            -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT\scripts\buildsystems\vcpkg.cmake" `
-            -DVCPKG_TARGET_TRIPLET=x64-windows-static
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cmake --build build --config Release
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Installa .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
 
-      - name: Configura e compila (32 bit, per Windows Media Player)
+      - name: Compila l'app (self-contained, non serve installare .NET)
         shell: pwsh
         run: |
-          cmake -S . -B build32 -A Win32 `
-            -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT\scripts\buildsystems\vcpkg.cmake" `
-            -DVCPKG_TARGET_TRIPLET=x86-windows-static
+          dotnet publish src/HeicViewer/HeicViewer.csproj -c Release -r win-x64 --self-contained true -o publish
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cmake --build build32 --config Release
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Get-ChildItem publish | Select-Object Name, Length | Format-Table -AutoSize
 
       - name: Crea l'installer
         shell: pwsh
         run: |
           $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
-          if (-not (Test-Path $iscc)) {
-            choco install innosetup -y --no-progress
-          }
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress }
           & $iscc installer\HeicViewer.iss
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
@@ -62,10 +51,3 @@ jobs:
           gh release delete latest --yes --cleanup-tag 2>$null
           $global:LASTEXITCODE = 0
           gh release create latest dist/HEIC-Viewer-Setup.exe --target "${{ github.sha }}" --title "HEIC Viewer (ultima versione)" --notes "Setup dell'ultima build. Scarica HEIC-Viewer-Setup.exe e avvialo." --latest
-
-      - name: Pubblica la release (solo sui tag v*)
-        if: startsWith(github.ref, 'refs/tags/v')
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh release create "${{ github.ref_name }}" dist/HEIC-Viewer-Setup.exe --title "HEIC Viewer ${{ github.ref_name }}" --generate-notes

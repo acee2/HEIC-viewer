@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>HeicViewer</AssemblyName>
+    <RootNamespace>HeicViewer</RootNamespace>
+    <ApplicationIcon>Assets\app.ico</ApplicationIcon>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <PlatformTarget>x64</PlatformTarget>
+    <SelfContained>true</SelfContained>
+    <Version>2.0.0</Version>
+    <Product>HEIC Viewer</Product>
+    <Description>Visualizzatore di foto e lettore video</Description>
+    <SatelliteResourceLanguages>it;en</SatelliteResourceLanguages>
+    <InvariantGlobalization>false</InvariantGlobalization>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Video: motore di VLC (HEVC/H.264/... senza codec di Windows) -->
+    <PackageReference Include="LibVLCSharp.WPF" Version="3.*" />
+    <PackageReference Include="VideoLAN.LibVLC.Windows" Version="3.*" />
+    <!-- Foto: ImageMagick (con libheif/libde265 per HEIC, AVIF, WEBP...) -->
+    <PackageReference Include="Magick.NET-Q8-x64" Version="14.*" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="Assets\app.ico" />
+  </ItemGroup>
+
+</Project>

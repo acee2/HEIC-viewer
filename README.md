@@ -1,37 +1,41 @@
-# HEIC Viewer per Windows
+# HEIC Viewer 2
 
-Apre le foto HEIC/HEIF dell'iPhone nel classico **Visualizzatore foto di Windows** e mostra le **miniature in Esplora file**, anche dei **video .MOV / .MP4** dell'iPhone (HEVC), che si aprono gratis in **Windows Media Player**.
-Gratis: usa i decoder open source [libheif](https://github.com/strukturag/libheif) + [libde265](https://github.com/strukturag/libde265), non il codec HEVC a pagamento di Microsoft.
+App per Windows che apre **foto e video** di qualsiasi tipo, comprese le foto **HEIC** e i video **MOV/HEVC** dell'iPhone, gratis e senza codec di Microsoft.
 
-Non c'è nessun programma in esecuzione: è un'estensione di Windows (una DLL) che il sistema carica solo quando serve.
+- **Foto** (HEIC, HEIF, AVIF, JPG, PNG, GIF, WEBP, BMP, TIFF, ICO, JXL, PSD…): visualizzatore in stile Visualizzatore foto di Windows 10, con zoom, rotazione, presentazione, schermo intero, foto precedente/successiva della cartella, elimina nel Cestino.
+- **Video** (MP4, MOV, MKV, AVI, WMV, WEBM, 3GP, MTS, TS, MPG…): lettore integrato basato sul motore di VLC (libVLC), con barra di avanzamento, volume, schermo intero.
 
-## Cosa contiene
+È un'app normale: **non installa codec nel sistema e non si aggancia a Esplora file**, quindi non può rallentarlo.
 
-| File | A cosa serve |
+## Installazione
+
+Scarica ed esegui il Setup: https://github.com/acee2/HEIC-viewer/releases/download/latest/HEIC-Viewer-Setup.exe
+
+L'installazione **non** imposta HEIC Viewer come app predefinita. Per usarlo:
+tasto destro su una foto o un video → **Apri con** → **Scegli un'altra app** → **HEIC Viewer** (spunta "Usa sempre questa app" se vuoi).
+Oppure: Impostazioni → App → App predefinite → *Scegli le app predefinite per tipo di file*.
+
+Se sul PC c'è ancora la vecchia versione 1.x, il Setup la disinstalla da solo.
+
+## Tasti
+
+| Tasto | Azione |
 |---|---|
-| `src/wic_decoder.cpp` | Decoder WIC: insegna a Windows (e al Visualizzatore foto) a leggere i file HEIC |
-| `src/thumbnail.cpp` | Generatore di miniature per Esplora file (usa la miniatura incorporata nella foto quando basta, quindi è veloce) |
-| `src/video_decode.cpp` | Miniature dei .MOV: legge il file, prende il primo fotogramma chiave e lo decodifica con libde265 (HEVC) o con Windows (H.264) |
-| `src/hevc_mft.cpp` | Decoder video HEVC per Media Foundation (libde265): Windows Media Player riproduce i video HEVC senza il codec a pagamento |
-| `src/log.cpp` | In caso di errore scrive in `%LOCALAPPDATA%\HEIC Viewer\errori.log` |
-| `src/heic_decode.cpp` | Decodifica con libheif, rotazione già applicata |
-| `src/dllmain.cpp` | Registrazione COM/WIC nel registro |
-| `installer/HeicViewer.iss` | Installer (Inno Setup) con disinstallazione da "App installate" |
-| `.github/workflows/build.yml` | Compilazione automatica su GitHub |
+| ← / → | Precedente / successivo nella cartella |
+| Rotellina, + / − | Zoom (foto) |
+| 0 / doppio clic | Adatta alla finestra ↔ dimensioni reali |
+| Ctrl+, / Ctrl+. | Ruota a sinistra / destra |
+| Spazio | Play/pausa (video), presentazione (foto) |
+| Ctrl+← / Ctrl+→ | Indietro / avanti di 5 secondi (video) |
+| F11 / Esc | Schermo intero / esci |
+| Canc | Sposta nel Cestino |
 
-## Come ottenere il Setup
+## Struttura
 
-1. Crea un repository su GitHub (anche privato) e carica tutti questi file, cartella `.github` compresa.
-2. Vai su **Actions** → aspetta che "Build HEIC Viewer" finisca (la prima volta ~10 minuti: compila libheif).
-3. Apri l'esecuzione → in fondo, sezione **Artifacts** → scarica **HEIC-Viewer-Setup**.
-4. Estrai lo zip e avvia `HEIC-Viewer-Setup.exe`.
+| Percorso | Contenuto |
+|---|---|
+| `src/HeicViewer` | App WPF .NET 8 (Magick.NET per le foto, LibVLCSharp per i video) |
+| `installer/HeicViewer.iss` | Installer Inno Setup (registra l'app senza renderla predefinita) |
+| `.github/workflows/build.yml` | Compilazione e pubblicazione del Setup |
 
-Per una release scaricabile: crea un tag `v1.0.0` e fai push, il Setup finisce in **Releases**.
-
-## Dopo l'installazione
-
-Una volta sola per tipo di file: tasto destro → **Apri con** → **Scegli un'altra app** → spunta **Usa sempre questa app** e scegli:
-- foto `.HEIC` → **Visualizzatore foto di Windows**
-- video `.MOV` / `.MP4` → **Windows Media Player**
-
-Disinstallazione: Impostazioni → App → HEIC Viewer → Disinstalla.
+Errori: `%LOCALAPPDATA%\HEIC Viewer\errori.log`.
