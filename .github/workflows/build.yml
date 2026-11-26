@@ -28,6 +28,16 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Get-ChildItem publish | Select-Object Name, Length | Format-Table -AutoSize
 
+      - name: Compila il generatore di copertine (C++, libheif + libde265)
+        shell: pwsh
+        run: |
+          cmake -S native -B build-native -A x64 `
+            -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT\scripts\buildsystems\vcpkg.cmake" `
+            -DVCPKG_TARGET_TRIPLET=x64-windows-static
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cmake --build build-native --config Release
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       - name: Crea l'installer
         shell: pwsh
         run: |

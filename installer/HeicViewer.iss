@@ -2,7 +2,7 @@
 ; Installa l'app e la registra in "Apri con" / "App predefinite"
 ; SENZA impostarla come predefinita: la scelta resta all'utente.
 
-#define AppVersion "2.0.0"
+#define AppVersion "2.1.0"
 
 [Setup]
 AppId={{6E1B3C52-8F0A-4D7B-9C1E-2A5D4F7B8C90}
@@ -30,19 +30,34 @@ CloseApplications=yes
 Name: "it"; MessagesFile: "compiler:Languages\Italian.isl"
 
 [Messages]
-FinishedLabel=HEIC Viewer è installato.%n%nNon è stato impostato come app predefinita: sei tu a scegliere. Tasto destro su una foto o un video > Apri con > Scegli un'altra app > HEIC Viewer (spunta "Usa sempre questa app" se vuoi che resti).%n%nOppure da Impostazioni > App > App predefinite > Scegli le app predefinite per tipo di file.
+FinishedLabel=HEIC Viewer è installato. Le foto e i video aperti con HEIC Viewer mostrano la copertina in Esplora file.%n%nNon è stato impostato come app predefinita: sei tu a scegliere. Tasto destro su una foto o un video > Apri con > Scegli un'altra app > HEIC Viewer (spunta "Usa sempre questa app" se vuoi che resti).%n%nOppure da Impostazioni > App > App predefinite > Scegli le app predefinite per tipo di file.
 
 [Tasks]
 Name: "desktopicon"; Description: "Crea un'icona sul desktop"; Flags: unchecked
+Name: "thumbs"; Description: "Rigenera subito le copertine in Esplora file (riavvia Esplora file)"; Flags: unchecked
 
 [Files]
 Source: "..\publish\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\build-native\Release\HeicViewerThumbs.dll"; DestDir: "{app}"; Flags: ignoreversion restartreplace uninsrestartdelete
 
 [Icons]
 Name: "{autoprograms}\HEIC Viewer"; Filename: "{app}\HeicViewer.exe"
 Name: "{autodesktop}\HEIC Viewer"; Filename: "{app}\HeicViewer.exe"; Tasks: desktopicon
 
 [Registry]
+; --- Copertine (miniature) in Esplora file: solo per i tipi di file di HEIC Viewer ---
+Root: HKLM; Subkey: "SOFTWARE\Classes\CLSID\{{6E1B3C53-8F0A-4D7B-9C1E-2A5D4F7B8C90}"; ValueType: string; ValueName: ""; ValueData: "HEIC Viewer - copertine foto"; Flags: uninsdeletekey
+Root: HKLM; Subkey: "SOFTWARE\Classes\CLSID\{{6E1B3C53-8F0A-4D7B-9C1E-2A5D4F7B8C90}\InprocServer32"; ValueType: string; ValueName: ""; ValueData: "{app}\HeicViewerThumbs.dll"
+Root: HKLM; Subkey: "SOFTWARE\Classes\CLSID\{{6E1B3C53-8F0A-4D7B-9C1E-2A5D4F7B8C90}\InprocServer32"; ValueType: string; ValueName: "ThreadingModel"; ValueData: "Apartment"
+Root: HKLM; Subkey: "SOFTWARE\Microsoft\Windows\CurrentVersion\Shell Extensions\Approved"; ValueType: string; ValueName: "{{6E1B3C53-8F0A-4D7B-9C1E-2A5D4F7B8C90}"; ValueData: "HEIC Viewer - copertine foto"; Flags: uninsdeletevalue
+Root: HKLM; Subkey: "SOFTWARE\Classes\CLSID\{{6E1B3C54-8F0A-4D7B-9C1E-2A5D4F7B8C90}"; ValueType: string; ValueName: ""; ValueData: "HEIC Viewer - copertine video"; Flags: uninsdeletekey
+Root: HKLM; Subkey: "SOFTWARE\Classes\CLSID\{{6E1B3C54-8F0A-4D7B-9C1E-2A5D4F7B8C90}\InprocServer32"; ValueType: string; ValueName: ""; ValueData: "{app}\HeicViewerThumbs.dll"
+Root: HKLM; Subkey: "SOFTWARE\Classes\CLSID\{{6E1B3C54-8F0A-4D7B-9C1E-2A5D4F7B8C90}\InprocServer32"; ValueType: string; ValueName: "ThreadingModel"; ValueData: "Apartment"
+Root: HKLM; Subkey: "SOFTWARE\Microsoft\Windows\CurrentVersion\Shell Extensions\Approved"; ValueType: string; ValueName: "{{6E1B3C54-8F0A-4D7B-9C1E-2A5D4F7B8C90}"; ValueData: "HEIC Viewer - copertine video"; Flags: uninsdeletevalue
+Root: HKLM; Subkey: "SOFTWARE\Classes\HeicViewer.Image\ShellEx\{{e357fccd-a995-4576-b01f-234630154e96}"; ValueType: string; ValueName: ""; ValueData: "{{6E1B3C53-8F0A-4D7B-9C1E-2A5D4F7B8C90}"
+Root: HKLM; Subkey: "SOFTWARE\Classes\HeicViewer.Video\ShellEx\{{e357fccd-a995-4576-b01f-234630154e96}"; ValueType: string; ValueName: ""; ValueData: "{{6E1B3C54-8F0A-4D7B-9C1E-2A5D4F7B8C90}"
+
+; --- Registrazione dell'app ---
 Root: HKLM; Subkey: "SOFTWARE\Classes\HeicViewer.Image"; ValueType: string; ValueName: ""; ValueData: "Foto (HEIC Viewer)"; Flags: uninsdeletekey
 Root: HKLM; Subkey: "SOFTWARE\Classes\HeicViewer.Image"; ValueType: string; ValueName: "FriendlyTypeName"; ValueData: "Foto"
 Root: HKLM; Subkey: "SOFTWARE\Classes\HeicViewer.Image\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: """{app}\HeicViewer.exe"",0"
@@ -168,6 +183,7 @@ Root: HKLM; Subkey: "SOFTWARE\Classes\Applications\HeicViewer.exe\SupportedTypes
 Root: HKLM; Subkey: "SOFTWARE\Classes\.ogv\OpenWithProgids"; ValueType: none; ValueName: "HeicViewer.Video"; Flags: uninsdeletevalue
 
 [Run]
+Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -Command ""Stop-Process -Name explorer -Force; Start-Sleep -Seconds 2; Remove-Item -Path ($env:LOCALAPPDATA + '\Microsoft\Windows\Explorer\thumbcache_*.db') -Force -ErrorAction SilentlyContinue; if (-not (Get-Process explorer -ErrorAction SilentlyContinue)) {{ Start-Process explorer.exe }"""; StatusMsg: "Rigenerazione copertine..."; Flags: runhidden runasoriginaluser waituntilterminated; Tasks: thumbs
 Filename: "ms-settings:defaultapps"; Description: "Apri le impostazioni delle app predefinite"; Flags: postinstall shellexec skipifsilent unchecked nowait
 
 [Code]

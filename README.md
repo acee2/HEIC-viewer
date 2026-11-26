@@ -5,7 +5,7 @@ App per Windows che apre **foto e video** di qualsiasi tipo, comprese le foto **
 - **Foto** (HEIC, HEIF, AVIF, JPG, PNG, GIF, WEBP, BMP, TIFF, ICO, JXL, PSD…): visualizzatore in stile Visualizzatore foto di Windows 10, con zoom, rotazione, presentazione, schermo intero, foto precedente/successiva della cartella, elimina nel Cestino.
 - **Video** (MP4, MOV, MKV, AVI, WMV, WEBM, 3GP, MTS, TS, MPG…): lettore integrato basato sul motore di VLC (libVLC), con barra di avanzamento, volume, schermo intero.
 
-È un'app normale: **non installa codec nel sistema e non si aggancia a Esplora file**, quindi non può rallentarlo.
+È un'app normale: **non installa codec nel sistema**. L'unica parte che lavora con Esplora file è il generatore di **copertine** (miniature) per i file aperti con HEIC Viewer: gira in un processo separato di Windows (DllHost), non dentro Esplora file. Per JPG/PNG/… usa il generatore di Windows; per HEIC usa libheif; per i video il primo fotogramma (libde265 per HEVC, Windows per H.264).
 
 ## Installazione
 
@@ -35,6 +35,7 @@ Se sul PC c'è ancora la vecchia versione 1.x, il Setup la disinstalla da solo.
 | Percorso | Contenuto |
 |---|---|
 | `src/HeicViewer` | App WPF .NET 8 (Magick.NET per le foto, LibVLCSharp per i video) |
+| `native` | Generatore di copertine (C++, libheif/libde265), registrato solo sui tipi di file dell'app |
 | `installer/HeicViewer.iss` | Installer Inno Setup (registra l'app senza renderla predefinita) |
 | `.github/workflows/build.yml` | Compilazione e pubblicazione del Setup |
 
